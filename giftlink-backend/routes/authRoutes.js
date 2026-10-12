@@ -4,36 +4,33 @@ const jwt = require('jsonwebtoken');
 const connectToDatabase = require('../models/db');
 const router = express.Router();
 const dotenv = require('dotenv');
-const pino = require('pino');  // Import Pino logger
-dotenv.config();
+const pino = require('pino');  // Importar el registrador Pino
 
-const logger = pino();  // Create a Pino logger instance
+//Task 1: Usar `body`,`validationResult` de `express-validator` para la validación de entrada
+const { body, validationResult } = require('express-validator');
 
-//Create JWT secret
+
+const logger = pino();  // Crear una instancia del registrador Pino
+
 dotenv.config();
 const JWT_SECRET = process.env.JWT_SECRET;
 
 router.post('/register', async (req, res) => {
     try {
-      //Connect to `giftsdb` in MongoDB through `connectToDatabase` in `db.js`.
+      //Conectar a `giftsdb` en MongoDB a través de `connectToDatabase` en `db.js`.
 	  const db = await connectToDatabase();
-
-	  //Access the `users` collection
       const collection = db.collection("users");
-
-	  //Check for existing email in DB
       const existingEmail = await collection.findOne({ email: req.body.email });
 
         if (existingEmail) {
-            logger.error('Email id already exists');
-            return res.status(400).json({ error: 'Email id already exists' });
+            logger.error('El id de correo electrónico ya existe');
+            return res.status(400).json({ error: 'El id de correo electrónico ya existe' });
         }
 
         const salt = await bcryptjs.genSalt(10);
         const hash = await bcryptjs.hash(req.body.password, salt);
         const email=req.body.email;
-
-		//Save user details
+        console.log('el correo es',email);
         const newUser = await collection.insertOne({
             email: req.body.email,
             firstName: req.body.firstName,
@@ -48,19 +45,17 @@ router.post('/register', async (req, res) => {
             },
         };
 
-		//Create JWT
         const authtoken = jwt.sign(payload, JWT_SECRET);
-        logger.info('User registered successfully');
+        logger.info('Usuario registrado exitosamente');
         res.json({ authtoken,email });
     } catch (e) {
         logger.error(e);
-        return res.status(500).send('Internal server error');
+        return res.status(500).send('Error interno del servidor');
     }
 });
 
-	//Login Endpoint
 router.post('/login', async (req, res) => {
-    console.log("\n\n Inside login")
+    console.log("\n\n Dentro del inicio de sesión")
 
     try {
         // const collection = await connectToDatabase();
@@ -71,8 +66,8 @@ router.post('/login', async (req, res) => {
         if (theUser) {
             let result = await bcryptjs.compare(req.body.password, theUser.password)
             if(!result) {
-                logger.error('Passwords do not match');
-                return res.status(404).json({ error: 'Wrong pasword' });
+                logger.error('Las contraseñas no coinciden');
+                return res.status(404).json({ error: 'Contraseña incorrecta' });
             }
             let payload = {
                 user: {
@@ -84,16 +79,74 @@ router.post('/login', async (req, res) => {
             const userEmail = theUser.email;
 
             const authtoken = jwt.sign(payload, JWT_SECRET);
-            logger.info('User logged in successfully');
+            logger.info('Usuario inició sesión exitosamente');
             return res.status(200).json({ authtoken, userName, userEmail });
         } else {
-            logger.error('User not found');
-            return res.status(404).json({ error: 'User not found' });
+            logger.error('Usuario no encontrado');
+            return res.status(404).json({ error: 'Usuario no encontrado' });
         }
     } catch (e) {
         logger.error(e);
-        return res.status(500).json({ error: 'Internal server error', details: e.message });
+        return res.status(500).json({ error: 'Error interno del servidor', details: e.message });
       }
 });
 
+// API de actualización
+router.put('/update', async (req, res) => {
+	// Task 2: Validar la entrada usando `validationResult` y devolver un mensaje apropiado si hay un error.
+
+    const errors = validationResult(req);
+
+	// Task 3: Verificar si el `email` está presente en el encabezado y lanzar un mensaje de error apropiado si no está presente.
+	if (!errors.isEmpty()) {
+        logger.error('Errores de validación en la solicitud de actualización', errors.array());
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+        const email = req.headers.email;
+
+        if (!email) {
+            logger.error('Correo electrónico no encontrado en los encabezados de la solicitud');
+            return res.status(400).json({ error: "Correo electrónico no encontrado en los encabezados de la solicitud" });
+		}
+
+		//Task 4: Conectar a MongoDB
+		const db = await connectToDatabase();
+        const collection = db.collection("users");
+
+		//Task 5: Encontrar las credenciales del usuario
+        const existingUser = await collection.findOne({ email });
+
+        if (!existingUser) {
+            logger.error('Usuario no encontrado');
+            return res.status(404).json({ error: "Usuario no encontrado" });
+        }
+
+        existingUser.firstName = req.body.name;
+        existingUser.updatedAt = new Date();
+
+		//Task 6: Actualizar las credenciales del usuario en la base de datos
+        const updatedUser = await collection.findOneAndUpdate(
+            { email },
+            { $set: existingUser },
+            { returnDocument: 'after' }
+        );
+
+		//Task 7: Crear autenticación JWT con user._id como carga útil utilizando la clave secreta del archivo .env
+        const payload = {
+            user: {
+                id: updatedUser._id.toString(),
+            },
+        };
+
+        const authtoken = jwt.sign(payload, JWT_SECRET);
+        logger.info('Usuario actualizado exitosamente');
+
+        res.json({ authtoken });
+    } catch (error) {
+        logger.error(error);
+        return res.status(500).send("Error interno del servidor");
+    }
+});
 module.exports = router;
