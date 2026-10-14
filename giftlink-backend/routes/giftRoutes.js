@@ -2,7 +2,9 @@
 const express = require('express');
 const router = express.Router();
 const connectToDatabase = require('../models/db');
-
+const giftRoutes = require('./routes/giftRoutes');
+app.use(express.json());
+app.use('/api/gifts', giftRoutes);
 // ✅ Get all gifts
 router.get('/', async (req, res) => {
     try {
@@ -54,11 +56,13 @@ router.post('/', async (req, res, next) => {
         const db = await connectToDatabase();
         const collection = db.collection("gifts");
         const result = await collection.insertOne(req.body);
-
         res.status(201).json(result.ops[0]);
     } catch (e) {
         next(e);
     }
 });
-
+const PORT = 3000;
+app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+});
 module.exports = router;
